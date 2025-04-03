@@ -1,9 +1,12 @@
+
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from compare_players import list_games, get_stats, extract_player_stats, extract_team_stats
 from playerDefine import Player
 from game import calculate_player_stats
 from utils import validate_date, safe_float
+from nba_api.stats.endpoints import playergamelog
+import pandas as pd
 
 app = Flask(__name__)
 CORS(app)
@@ -25,8 +28,7 @@ def get_players():
         player_df = get_stats(game_id)[0]
         player_df["MIN"] = player_df["MIN"].apply(safe_float)
         players = player_df[player_df["MIN"] > 0][["PLAYER_NAME", "TEAM_ABBREVIATION"]].drop_duplicates()
-        players_list = players.to_dict(orient="records")
-        return jsonify({"players": players_list})
+        return jsonify({"players": players.to_dict(orient="records")})
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
@@ -41,6 +43,7 @@ def compare_players():
         team2 = data["team2"]
 
         team_df, player_df = get_stats(game_id)[1], get_stats(game_id)[0]
+
         stats1 = extract_player_stats(name1, team1, game_id, player_df)
         stats2 = extract_player_stats(name2, team2, game_id, player_df)
 
@@ -57,10 +60,23 @@ def compare_players():
             "player1": {"name": p1.name, "stats": p1.stats},
             "player2": {"name": p2.name, "stats": p2.stats}
         })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+@app.route("/season-averages", methods=["GET"])
+def season_averages():
+    try:
+        player_name = request.args.get("player")
+        season = request.args.get("season", "2023-24")
+        season_type = request.args.get("type", "Regular Season")
+
+        gamelog = playergamelog.PlayerGameLog(player_name=player_name, season=season, season_type_all_star=season_type)
+        df = gamelog.get_data_frames()[0]
+        stats = df.mean(numeric_only=True).to_dict()
+        return jsonify({ "player": player_name, "season": season, "averages": stats })
 
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
 if __name__ == "__main__":
     app.run(debug=True)
-
